@@ -1,117 +1,197 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
-
-import React from 'react';
-import type {PropsWithChildren} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
+import WebView from 'react-native-webview';
 import {
-  SafeAreaView,
-  ScrollView,
-  StatusBar,
-  StyleSheet,
-  Text,
-  useColorScheme,
-  View,
-} from 'react-native';
+  ALL_STORAGE_READ_KEY,
+  ALL_STORAGE_STORE_KEY,
+  WEBVIEW_URL,
+  WEBVIEW_URL_MYACCOUNT,
+  injectedScriptRead,
+  injectedScriptStore,
+} from './constants';
+import {Pressable, StyleSheet, Text, View} from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import {logCookieValue, logLocalStorageValue, logSessionValue} from './utils';
 
-import {
-  Colors,
-  DebugInstructions,
-  Header,
-  LearnMoreLinks,
-  ReloadInstructions,
-} from 'react-native/Libraries/NewAppScreen';
+const App: React.FC<{}> = () => {
+  // Reference for the WebView component
+  const webViewRef = useRef<WebView>(null);
+  const [beforeLoadScriptStr, setBeforeLoadScriptStr] = useState('');
 
-type SectionProps = PropsWithChildren<{
-  title: string;
-}>;
+  useEffect(() => {
+    const fetchData = async () => {
+      const mainScript = await handleReadAsycn();
+      console.log('mainScript', mainScript);
+      const script = `(function () { 
+          ${mainScript} 
+          window.ReactNativeWebView.postMessage(JSON.stringify({
+            messageType: 'WEBVIEW_LOADED_INIT',
+            payload: {}
+        }))
+       })()`;
+      // console.log('script to be loaded==>', script);
+      setBeforeLoadScriptStr(script);
+    };
 
-function Section({children, title}: SectionProps): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
-  return (
-    <View style={styles.sectionContainer}>
-      <Text
-        style={[
-          styles.sectionTitle,
-          {
-            color: isDarkMode ? Colors.white : Colors.black,
-          },
-        ]}>
-        {title}
-      </Text>
-      <Text
-        style={[
-          styles.sectionDescription,
-          {
-            color: isDarkMode ? Colors.light : Colors.dark,
-          },
-        ]}>
-        {children}
-      </Text>
-    </View>
-  );
-}
+    fetchData();
+  }, []);
 
-function App(): React.JSX.Element {
-  const isDarkMode = useColorScheme() === 'dark';
+  // Function to handle messages from the WebView
+  const handleMessage = async (event: any) => {
+    const message = event.nativeEvent.data;
+    try {
+      const parsedMessage = JSON.parse(message);
+      switch (parsedMessage['messageType']) {
+        case ALL_STORAGE_READ_KEY:
+          handleReadMessage(parsedMessage['payload']);
+          break;
+        case ALL_STORAGE_STORE_KEY:
+          await handleStoreMessage(parsedMessage['payload']);
+          break;
+        case 'WEBVIEW_LOADED_INIT':
+          reloadWebview();
+        default:
+          break;
+      }
+    } catch (error) {
+      console.error('Error parsing message:', error);
+    }
+  };
 
-  const backgroundStyle = {
-    backgroundColor: isDarkMode ? Colors.darker : Colors.lighter,
+  const handleReadMessage = (data: any) => {
+    data &&
+      data['localstorage'] &&
+      logLocalStorageValue(data['localstorage'], 'handleReadMessage');
+    data &&
+      data['cookies'] &&
+      logCookieValue(data['cookies'], 'handleReadMessage');
+
+    data &&
+      data['session'] &&
+      logSessionValue(data['session'], 'handleReadMessage');
+  };
+
+  const handleStoreMessage = async (data: any) => {
+    console.log('$$$$$$$$$$$$$$$$', data['session']);
+    if (data['localstorage']) {
+      await AsyncStorage.setItem(
+        'localstorage',
+        JSON.stringify(data['localstorage']),
+      );
+      console.log('handleStoreMessage localstorage completed.');
+    }
+    if (data['cookies']) {
+      await AsyncStorage.setItem('cookies', JSON.stringify(data['cookies']));
+      console.log('handleStoreMessage cookies completed.');
+    }
+    if (data['session']) {
+      await AsyncStorage.setItem('session', JSON.stringify(data['session']));
+      console.log('handleStoreMessage session completed.');
+    }
+  };
+
+  const handleReadAsycn = async (loadAsync: boolean = false) => {
+
+    const localStorageString = await AsyncStorage.getItem('localstorage');
+    const cookieString = await AsyncStorage.getItem('cookies');
+    const sessionString = await AsyncStorage.getItem('session');
+
+    let jsLS = '';
+    let jsCookie = '';
+    let jsSession = '';
+    if (localStorageString) {
+      jsLS = logLocalStorageValue(
+        JSON.parse(localStorageString),
+        'handleReadAsycn',
+      );
+    }
+    if (cookieString) {
+      jsCookie = logCookieValue(JSON.parse(cookieString), 'handleReadAsycn');
+    }
+    if (sessionString) {
+      jsSession = logSessionValue(JSON.parse(sessionString), 'handleReadAsycn');
+    }
+    return `${jsLS} ${jsCookie} ${jsSession}`;
+  };
+
+  const handleRead = () => {
+    // Execute JavaScript code within the WebView to trigger postMessage
+    if (webViewRef.current) {
+      webViewRef.current.injectJavaScript(injectedScriptRead);
+    }
+  };
+
+  const handleStore = () => {
+    // Execute JavaScript code within the WebView to trigger postMessage
+    if (webViewRef.current) {
+      webViewRef.current.injectJavaScript(injectedScriptStore);
+    }
+  };
+
+  const reloadWebview = () => {
+    console.log('reloadWebview');
+    // if (webViewRef) {
+    //   webViewRef.current.reload();
+    // }
   };
 
   return (
-    <SafeAreaView style={backgroundStyle}>
-      <StatusBar
-        barStyle={isDarkMode ? 'light-content' : 'dark-content'}
-        backgroundColor={backgroundStyle.backgroundColor}
+    <View style={styles.container}>
+      <WebView
+        ref={webViewRef}
+        source={{uri: WEBVIEW_URL}}
+        style={styles.webview}
+        onMessage={handleMessage} // Handle messages from WebView
+        // injectedJavaScript={startInjectingScript}
+        injectedJavaScriptBeforeContentLoaded={beforeLoadScriptStr}
       />
-      <ScrollView
-        contentInsetAdjustmentBehavior="automatic"
-        style={backgroundStyle}>
-        <Header />
-        <View
-          style={{
-            backgroundColor: isDarkMode ? Colors.black : Colors.white,
-          }}>
-          <Section title="Step One">
-            Edit <Text style={styles.highlight}>App.tsx</Text> to change this
-            screen and then come back to see your edits.
-          </Section>
-          <Section title="See Your Changes">
-            <ReloadInstructions />
-          </Section>
-          <Section title="Debug">
-            <DebugInstructions />
-          </Section>
-          <Section title="Learn More">
-            Read the docs to discover what to do next:
-          </Section>
-          <LearnMoreLinks />
-        </View>
-      </ScrollView>
-    </SafeAreaView>
+      <View style={styles.wrap}>
+        <Pressable style={styles.btn} onPress={handleRead}>
+          <Text style={styles.btnText}>{'READ'}</Text>
+        </Pressable>
+        <Pressable style={styles.btn} onPress={handleStore}>
+          <Text style={styles.btnText}>{'Store'}</Text>
+        </Pressable>
+        <Pressable
+          style={styles.btn}
+          onPress={handleReadAsycn}>
+          <Text style={styles.btnText}>{'Read Async'}</Text>
+        </Pressable>
+      </View>
+    </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  sectionContainer: {
-    marginTop: 32,
-    paddingHorizontal: 24,
+  container: {
+    flex: 1,
+    width: '100%',
+    backgroundColor: 'red',
   },
-  sectionTitle: {
-    fontSize: 24,
-    fontWeight: '600',
+  webview: {
+    height: '90%',
+    width: '100%',
+    backgroundColor: 'green',
   },
-  sectionDescription: {
-    marginTop: 8,
-    fontSize: 18,
-    fontWeight: '400',
+  wrap: {
+    height: '10%',
+    width: '100%',
+    backgroundColor: 'grey',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
-  highlight: {
-    fontWeight: '700',
+  btn: {
+    backgroundColor: 'blue',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    color: 'white',
+    borderRadius: 8,
+    margin: 8,
+  },
+  btnText: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: 'white',
   },
 });
 
