@@ -113,6 +113,22 @@ const App: React.FC<{}> = () => {
     return `${jsLS} ${jsCookie} ${jsSession}`;
   };
 
+  const readSync = async () => {
+    const localStorageString = await AsyncStorage.getItem('localstorage');
+    const cookieString = await AsyncStorage.getItem('cookies');
+    const sessionString = await AsyncStorage.getItem('session');
+    if (localStorageString) {
+      logLocalStorageValue(JSON.parse(localStorageString), 'handleReadAsycn');
+    }
+    if (cookieString) {
+      logCookieValue(JSON.parse(cookieString), 'handleReadAsycn');
+    }
+    if (sessionString) {
+      logSessionValue(JSON.parse(sessionString), 'handleReadAsycn');
+    }
+  };
+
+
   const handleRead = () => {
     // Execute JavaScript code within the WebView to trigger postMessage
     if (webViewRef.current) {
@@ -153,7 +169,7 @@ const App: React.FC<{}> = () => {
         </Pressable>
         <Pressable
           style={styles.btn}
-          onPress={handleReadAsycn}>
+          onPress={readSync}>
           <Text style={styles.btnText}>{'Read Async'}</Text>
         </Pressable>
       </View>
